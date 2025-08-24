@@ -52,3 +52,8 @@ docker compose up --build
 ```
 
 PS: С наилучшими пожеланиями!
+
+1. Создаём миграции:
+npm run knex:dev migrate make 001_create_table_warehouses
+npm run knex:dev migrate make 002_create_table_tariff_requests
+npm run knex:dev migrate make 003_create_table_tariffs
