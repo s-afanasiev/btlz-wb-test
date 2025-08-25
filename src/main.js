@@ -5,7 +5,7 @@ import WildberriesAPI from './wb/wb-api.js'
 import PgService from './postgres/service.js'
 import TariffOperation from './tariff-operation.js'
 import GoogleSheetsService from './google-service/index.js'
-import knex from './postgres/knex.ts'
+import knex from './postgres/knex.js'
 
 async function main() {
     console.log('main start');
@@ -23,6 +23,7 @@ async function cycle_operations(wbAPI, pgService, googleService) {
         //@ Преобразование текущей даты к виду: 'ГГГГ-ММ-ДД'
         const todayTimeMyFormat = formatDate(new Date());
         await tariffOperation.run(todayTimeMyFormat);
+        console.debug('main: следующее обновление запланировано через 1 час...');
     } catch (err) {
         console.error(`main: НЕ УДАЛОСЬ обновить данные WB: ${err.message}`);
     }

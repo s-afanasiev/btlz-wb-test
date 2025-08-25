@@ -25,12 +25,19 @@ WORKDIR /app
 COPY --from=build /app/package*.json .
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/src/postgres/migrations ./dist/postgres/migrations
+COPY --from=build /app/src/google-service/peerless-tiger-470113-s4-5bfd19996102.json ./dist/google-service/
 
-# Установка переменной окружения
+# Установка переменных окружения
 ENV NODE_ENV=production
+ENV PORT=3000
 
 # Установка не-root пользователя
 USER appuser
+
+# Healthcheck для проверки работоспособности приложения
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "console.log('Health check passed')" || exit 1
 
 # Команда для запуска приложения
 CMD ["npm", "start"]

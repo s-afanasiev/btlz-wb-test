@@ -27,4 +27,7 @@ async function startApplication() {
 }
 
 // Запускаем приложение
-startApplication();
+startApplication().catch(error => {
+    console.error("Unhandled error:", error);
+    process.exit(1);
+});
