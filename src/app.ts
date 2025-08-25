@@ -1,6 +1,30 @@
 import knex, { migrate, seed } from "#postgres/knex.js";
+import main from "./main.js";
 
-await migrate.latest();
-await seed.run();
+async function startApplication() {
+    try {
+        console.log("Starting application...");
+        
+        // Запускаем миграции
+        console.log("Running database migrations...");
+        await migrate.latest();
+        console.log("Migrations completed successfully");
+        
+        // Запускаем сиды
+        console.log("Running database seeds...");
+        await seed.run();
+        console.log("Seeds completed successfully");
+        
+        // Запускаем основное приложение
+        console.log("Starting main application...");
+        await main();
+        
+        console.log("Application started successfully");
+    } catch (error) {
+        console.error("Failed to start application:", error);
+        process.exit(1);
+    }
+}
 
-console.log("All migrations and seeds have been run");
+// Запускаем приложение
+startApplication();

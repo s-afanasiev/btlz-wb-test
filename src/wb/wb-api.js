@@ -69,7 +69,7 @@ class WildberriesAPI {
         },
        */
       console.log(`✅ Получено ${response.data.response.data.warehouseList.length || 0} тарифных записей`);
-      console.log(`Данные: `, response.data.response.data);
+      // console.log(`Данные: `, response.data.response.data);
       return response.data.response.data;
     } catch (error) {
       console.error('❌ Ошибка при получении тарифов:', error.message);

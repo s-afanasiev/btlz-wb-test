@@ -1,4 +1,248 @@
 //@ts-nocheck
+/*
+class SavedWbDataToDB {
+    constructor(knex) {
+        this.knex = knex;
+    }
+
+    getTodayBounds() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return { today, tomorrow };
+    }
+
+    async insertTariffRequest(trx, wbData) {
+        const [tariffRequest] = await trx('tariff_requests')
+            .insert({
+                dt_next_box: wbData.dtNextBox || null,
+                dt_till_max: wbData.dtTillMax || null,
+                request_dt: new Date()
+            })
+            .returning('id');
+        return tariffRequest.id;
+    }
+
+    async findExistingTodayTariffRequest(trx) {
+        const { today, tomorrow } = this.getTodayBounds();
+        const records = await trx('tariff_requests')
+            .where('request_dt', '>=', today)
+            .where('request_dt', '<', tomorrow)
+            .select('id');
+        return records.map(record => record.id);
+    }
+
+    async saveWarehouseIfNotExist(trx, warehouse) {
+        let warehouseRecord = await trx('warehouses')
+            .where({
+                wb_warehouse_name: warehouse.warehouseName,
+                geo_name: warehouse.geoName
+            })
+            .first();
+        if (!warehouseRecord) {
+            [warehouseRecord] = await trx('warehouses')
+                .insert({
+                    wb_warehouse_name: warehouse.warehouseName,
+                    geo_name: warehouse.geoName
+                })
+                .returning(['id']);
+        }
+        return warehouseRecord;
+    }
+
+    async insertTariff(trx, tariffRequestId, warehouse, warehouseRecord) {
+        await trx('tariffs').insert({
+            tariff_request_id: tariffRequestId,
+            warehouse_id: warehouseRecord.id,
+            box_delivery_base: warehouse.boxDeliveryBase,
+            box_delivery_coef_expr: warehouse.boxDeliveryCoefExpr,
+            box_delivery_liter: warehouse.boxDeliveryLiter,
+            box_delivery_marketplace_base: warehouse.boxDeliveryMarketplaceBase,
+            box_delivery_marketplace_coef_expr: warehouse.boxDeliveryMarketplaceCoefExpr,
+            box_delivery_marketplace_liter: warehouse.boxDeliveryMarketplaceLiter,
+            box_storage_base: warehouse.boxStorageBase,
+            box_storage_coef_expr: warehouse.boxStorageCoefExpr,
+            box_storage_liter: warehouse.boxStorageLiter
+        });
+    }
+
+    async processWarehouses(trx, tariffRequestId, warehouseList) {
+        for (const warehouse of warehouseList) {
+            const warehouseRecord = await this.saveWarehouseIfNotExist(trx, warehouse);
+            await this.insertTariff(trx, tariffRequestId, warehouse, warehouseRecord);
+        }
+    }
+
+    async clearTariffsForRequest(trx, tariffRequestId) {
+        await trx('tariffs')
+            .where('tariff_request_id', tariffRequestId)
+            .del();
+    }
+
+    async execute(wbData) {
+        const trx = await this.knex.transaction();
+        try {
+            const existingTodayRequestIds = await this.findExistingTodayTariffRequest(trx);
+            console.debug('existingTodayRequestIds:', existingTodayRequestIds);
+            let isUpdate = false;
+            if (existingTodayRequestIds.length > 0) {
+                isUpdate = true;
+            }
+            const tariffRequestId = await this.insertTariffRequest(trx, wbData);
+            await this.processWarehouses(trx, tariffRequestId, wbData.warehouseList);
+            // Очищаем тарифы всех старых запросов, если были запросы ранее сегодня
+            for (const previousTariffRequestId of existingTodayRequestIds) {
+                console.debug('previousTariffRequestId:', previousTariffRequestId);
+                await this.clearTariffsForRequest(trx, previousTariffRequestId);
+            }
+            await trx.commit();
+            console.log(`${isUpdate ? 'Обновлен' : 'Создан'} запрос тарифов с ID: ${tariffRequestId}`);
+            return { tariffRequestId, isUpdate };
+        } catch (error) {
+            await trx.rollback();
+            console.error('Ошибка при сохранении данных:', error);
+            throw error;
+        }
+    }
+}
+*/
+
+class SavedWbBatchToDB {
+    constructor(knex) {
+        this.knex = knex;
+    }
+
+    getTodayBounds() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return { today, tomorrow };
+    }
+
+    async findExistingTodayTariffRequest(trx) {
+        const { today, tomorrow } = this.getTodayBounds();
+        const records = await trx('tariff_requests')
+            .where('request_dt', '>=', today)
+            .where('request_dt', '<', tomorrow)
+            .select('id');
+        return records.map(record => record.id);
+    }
+
+    async createTariffRequest(trx, wbData) {
+        const [tariffRequest] = await trx('tariff_requests')
+            .insert({
+                dt_next_box: wbData.dtNextBox || null,
+                dt_till_max: wbData.dtTillMax || null,
+                request_dt: new Date()
+            })
+            .returning('id');
+        return tariffRequest.id;
+    }
+
+    async clearTariffsForRequest(trx, tariffRequestId) {
+        await trx('tariffs')
+            .where('tariff_request_id', tariffRequestId)
+            .del();
+    }
+
+    async loadExistingWarehousesMap(trx) {
+        const map = new Map();
+        const rows = await trx('warehouses').select('*');
+        rows.forEach(wh => {
+            const key = `${wh.wb_warehouse_name}|${wh.geo_name}`;
+            map.set(key, wh);
+        });
+        return map;
+    }
+
+    computeWarehousesToInsert(wbData, existingMap) {
+        const toInsert = [];
+        for (const warehouse of wbData.warehouseList) {
+            const key = `${warehouse.warehouseName}|${warehouse.geoName}`;
+            if (!existingMap.has(key)) {
+                toInsert.push({
+                    wb_warehouse_name: warehouse.warehouseName,
+                    geo_name: warehouse.geoName
+                });
+            }
+        }
+        return toInsert;
+    }
+
+    async insertWarehousesBatch(trx, warehousesToInsert, existingMap) {
+        if (warehousesToInsert.length === 0) return;
+        const newWarehouses = await trx('warehouses')
+            .insert(warehousesToInsert)
+            .returning(['id', 'wb_warehouse_name', 'geo_name']);
+        newWarehouses.forEach(wh => {
+            const key = `${wh.wb_warehouse_name}|${wh.geo_name}`;
+            existingMap.set(key, wh);
+        });
+    }
+
+    buildTariffsRows(wbData, tariffRequestId, existingMap) {
+        return wbData.warehouseList.map(warehouse => {
+            const key = `${warehouse.warehouseName}|${warehouse.geoName}`;
+            const warehouseRecord = existingMap.get(key);
+            return {
+                tariff_request_id: tariffRequestId,
+                warehouse_id: warehouseRecord.id,
+                box_delivery_base: warehouse.boxDeliveryBase,
+                box_delivery_coef_expr: warehouse.boxDeliveryCoefExpr,
+                box_delivery_liter: warehouse.boxDeliveryLiter,
+                box_delivery_marketplace_base: warehouse.boxDeliveryMarketplaceBase,
+                box_delivery_marketplace_coef_expr: warehouse.boxDeliveryMarketplaceCoefExpr,
+                box_delivery_marketplace_liter: warehouse.boxDeliveryMarketplaceLiter,
+                box_storage_base: warehouse.boxStorageBase,
+                box_storage_coef_expr: warehouse.boxStorageCoefExpr,
+                box_storage_liter: warehouse.boxStorageLiter
+            };
+        });
+    }
+
+    async insertTariffsBatch(trx, tariffsRows) {
+        if (tariffsRows.length === 0) return;
+        await trx('tariffs').insert(tariffsRows);
+    }
+
+    async execute(wbData) {
+        const trx = await this.knex.transaction();
+        try {
+            // 1) Найти существующие запросы за сегодня (если есть), запомнить их id
+            const existingTodayRequestIds = await this.findExistingTodayTariffRequest(trx);
+            console.log('SavedWbBatchToDb: previousTariffRequestIds:', existingTodayRequestIds)
+            const isUpdate = existingTodayRequestIds.length > 0;
+
+            // 2) Создать новый запрос за сегодня
+            const tariffRequestId = await this.createTariffRequest(trx, wbData);
+
+            // 3) Складская часть: загрузить карту, дозавести недостающие
+            const existingWarehouses = await this.loadExistingWarehousesMap(trx);
+            const warehousesToInsert = this.computeWarehousesToInsert(wbData, existingWarehouses);
+            await this.insertWarehousesBatch(trx, warehousesToInsert, existingWarehouses);
+
+            // 4) Подготовить и вставить тарифы пачкой для нового запроса
+            const tariffsToInsert = this.buildTariffsRows(wbData, tariffRequestId, existingWarehouses);
+            await this.insertTariffsBatch(trx, tariffsToInsert);
+
+            // 5) Если ранее сегодня были запросы — очистить их тарифы
+            for (const previousTariffRequestId of existingTodayRequestIds) {
+                await this.clearTariffsForRequest(trx, previousTariffRequestId);
+            }
+
+            await trx.commit();
+            console.log(`${isUpdate ? 'Обновлен' : 'Создан'} запрос тарифов с ID: ${tariffRequestId}, складов: ${wbData.warehouseList.length}`);
+            return { tariffRequestId, isUpdate };
+        } catch (error) {
+            await trx.rollback();
+            console.error('Ошибка при сохранении данных:', error);
+            throw error;
+        }
+    }
+}
+
 class PgService {
     constructor(knex) {
         this.knex = knex;
@@ -8,136 +252,31 @@ class PgService {
      * @param {Object} wbData - данные от Wildberries
      */
     async saveWbDataToDB(wbData) {
-        const start = new Date().getTime();
-        const trx = await this.knex.transaction();
-        try {
-            // 1. Создаем запись в tariff_requests
-            const [tariffRequest] = await trx('tariff_requests')
-            .insert({
-                dt_next_box: wbData.dtNextBox || null,
-                dt_till_max: wbData.dtTillMax,
-                request_dt: new Date() // текущее время
-            })
-            .returning('id');
-            const tariffRequestId = tariffRequest.id;
-            // 2. Обрабатываем каждый склад
-            for (const warehouse of wbData.warehouseList) {
-                // 2.1. Ищем или создаем запись склада
-                let warehouseRecord = await trx('warehouses')
-                    .where({
-                    wb_warehouse_name: warehouse.warehouseName,
-                    geo_name: warehouse.geoName
-                    })
-                    .first();
-                if (!warehouseRecord) {
-                    // Создаем новый склад если не существует
-                    [warehouseRecord] = await trx('warehouses')
-                    .insert({
-                        wb_warehouse_name: warehouse.warehouseName,
-                        geo_name: warehouse.geoName
-                    })
-                    .returning(['id']);
-                }
-                // 2.2. Создаем запись тарифа
-                await trx('tariffs').insert({
-                    tariff_request_id: tariffRequestId,
-                    warehouse_id: warehouseRecord.id,
-                    box_delivery_base: warehouse.boxDeliveryBase,
-                    box_delivery_coef_expr: warehouse.boxDeliveryCoefExpr,
-                    box_delivery_liter: warehouse.boxDeliveryLiter,
-                    box_delivery_marketplace_base: warehouse.boxDeliveryMarketplaceBase,
-                    box_delivery_marketplace_coef_expr: warehouse.boxDeliveryMarketplaceCoefExpr,
-                    box_delivery_marketplace_liter: warehouse.boxDeliveryMarketplaceLiter,
-                    box_storage_base: warehouse.boxStorageBase,
-                    box_storage_coef_expr: warehouse.boxStorageCoefExpr,
-                    box_storage_liter: warehouse.boxStorageLiter
-                });
-            }
-            await trx.commit();
-            const end = new Date().getTime();
-            console.log(`Сохранен запрос тарифов с ID: ${tariffRequestId}, Время: ${end-start}`);
-            return tariffRequestId;
-        } catch (error) {
-            await trx.rollback();
-            console.error('Ошибка при сохранении данных:', error);
-            throw error;
-        }
+        const saver = new SavedWbDataToDB(this.knex);
+        return await saver.execute(wbData);
     }
 
     /**
      * Альтернативный вариант с пакетной вставкой для лучшей производительности
      */
     async saveWbDataToDBBatch(wbData) {
-        const trx = await this.knex.transaction();
-        try {
-            // 1. Создаем запись в tariff_requests
-            const [tariffRequest] = await trx('tariff_requests')
-                .insert({
-                    dt_next_box: wbData.dtNextBox || null,
-                    dt_till_max: wbData.dtTillMax || null,
-                    request_dt: new Date()
-                })
-                .returning('id');
-            const tariffRequestId = tariffRequest.id;
-            // 2. Подготавливаем данные складов для пакетной вставки
-            const warehousesToInsert = [];
-            const existingWarehouses = new Map();
-            // 2.1. Получаем все существующие склады одним запросом
-            const existingWarehouseRecords = await trx('warehouses').select('*');
-            existingWarehouseRecords.forEach(wh => {
-                const key = `${wh.wb_warehouse_name}|${wh.geo_name}`;
-                existingWarehouses.set(key, wh);
-            });
-            // 2.2. Определяем какие склады нужно создать
-            for (const warehouse of wbData.warehouseList) {
-                const key = `${warehouse.warehouseName}|${warehouse.geoName}`;
-                if (!existingWarehouses.has(key)) {
-                    warehousesToInsert.push({
-                    wb_warehouse_name: warehouse.warehouseName,
-                    geo_name: warehouse.geoName
-                    });
-                }
-            }
-            // 2.3. Создаем новые склады пакетно
-            let newWarehouses = [];
-            if (warehousesToInsert.length > 0) {
-                newWarehouses = await trx('warehouses')
-                    .insert(warehousesToInsert)
-                    .returning(['id', 'wb_warehouse_name', 'geo_name']);
-                // Добавляем новые склады в карту
-                newWarehouses.forEach(wh => {
-                    const key = `${wh.wb_warehouse_name}|${wh.geo_name}`;
-                    existingWarehouses.set(key, wh);
-                });
-            }
-            // 2.4. Подготавливаем данные тарифов для пакетной вставки
-            const tariffsToInsert = wbData.warehouseList.map(warehouse => {
-                const key = `${warehouse.warehouseName}|${warehouse.geoName}`;
-                const warehouseRecord = existingWarehouses.get(key);
-                return {
-                    tariff_request_id: tariffRequestId,
-                    warehouse_id: warehouseRecord.id,
-                    box_delivery_base: warehouse.boxDeliveryBase,
-                    box_delivery_coef_expr: warehouse.boxDeliveryCoefExpr,
-                    box_delivery_liter: warehouse.boxDeliveryLiter,
-                    box_delivery_marketplace_base: warehouse.boxDeliveryMarketplaceBase,
-                    box_delivery_marketplace_coef_expr: warehouse.boxDeliveryMarketplaceCoefExpr,
-                    box_delivery_marketplace_liter: warehouse.boxDeliveryMarketplaceLiter,
-                    box_storage_base: warehouse.boxStorageBase,
-                    box_storage_coef_expr: warehouse.boxStorageCoefExpr,
-                    box_storage_liter: warehouse.boxStorageLiter
-                };
-            });
-            // 2.5. Вставляем все тарифы одним запросом
-            await trx('tariffs').insert(tariffsToInsert);
-            await trx.commit();
-            console.log(`Сохранен запрос тарифов с ID: ${tariffRequestId}, складов: ${wbData.warehouseList.length}`);
-            return tariffRequestId;
-        } catch (error) {
-            await trx.rollback();
-            console.error('Ошибка при сохранении данных:', error);
-            throw error;
-        }
+        const saver = new SavedWbBatchToDB(this.knex);
+        return await saver.execute(wbData);
+    }
+
+    /**
+     * Функция для получения последнего запроса тарифов за сегодня
+     */
+    async getTodayTariffRequest() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return await this.knex('tariff_requests')
+            .where('request_dt', '>=', today)
+            .where('request_dt', '<', tomorrow)
+            .orderBy('request_dt', 'desc')
+            .first();
     }
 
     /**
@@ -156,28 +295,11 @@ class PgService {
             .where('tr.id', tariffRequestId);
     }
 
-    async test() {
-        try {
-            // const result = await this.knex('tariff_requests').select('*');
-            // const result = await this.knex('warehouses').select('*');
-            const result = await this.knex('tariffs').select('*');
-            console.log('result=', result);
-        } catch (error) {
-            console.error(`Failed to connect to the database: ${error.message}`);
-            throw error;
-        }
-    }
-
-    async test2() {
-        try {
-            const result = await this.knex.raw('SELECT 1 + 1 AS result');
-            const value = result?.rows?.[0]?.result ?? result?.[0]?.result ?? 'unknown';
-            console.log('DB test ok:', value);
-        } catch (error) {
-            console.error(`Failed to connect to the database: ${error.message}`);
-            throw error;
-        }
+    async getViewForGoogleSheets() {
+        return await this.knex('current_tariffs').select('*');
     }
 }
 
+// export { SavedWbDataToDB };
+export { SavedWbBatchToDB };
 export default PgService;

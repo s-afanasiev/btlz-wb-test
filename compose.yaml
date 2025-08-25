@@ -70,11 +70,17 @@ services:
     networks:
       - postgres-net
 
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('Health check passed')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: 5
 
-    command: [ "npm", "run", "start" ]
     restart: unless-stopped

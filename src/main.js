@@ -3,40 +3,43 @@ import dotenv from "dotenv";
 dotenv.config();
 import WildberriesAPI from './wb/wb-api.js'
 import PgService from './postgres/service.js'
-import PgService2 from './postgres/service2.js'
+import TariffOperation from './tariff-operation.js'
 import GoogleSheetsService from './google-service/index.js'
 import knex from './postgres/knex.ts'
 
 async function main() {
     console.log('main start');
-    const pgService = new PgService2(knex);
-    const googleService = new GoogleSheetsService();
-    await wb_test(pgService, googleService);
-    console.log('main end');
-}
-
-async function wb_test(pgService, googleService) {
+    const pgService = new PgService(knex);
+    const googleService = await new GoogleSheetsService().init();
     const token = process.env.WB_API_TOKEN;
     const wbAPI = new WildberriesAPI(token);
-  
-    try {
-        // Получаем актуальные тарифы
-        // const wbData = await wbAPI.fetchBoxTariffs('2025-08-25');
-        // const result = await pgService.saveWbDataToDBBatch(wbData);
-        // console.log(`Данные успешно ${result.isUpdate ? 'обновлены' : 'созданы'}, ID запроса:`, result.tariffRequestId);
-
-        // const googleResult = await pgService.getViewForGoogleSheets();
-        await googleService.init();
-        googleService.write_test_data();
-        
-        // console.log('\n📊 Получены тарифы для складов:');
-        // tariffs.forEach(tariff => {
-        // console.log(`- ${tariff.warehouseName}: доставка от ${tariff.boxDeliveryBase}₽`);
-        // });
-
-    } catch (error) {
-        console.error('💥 Критическая ошибка:', error.message);
-    }
+    cycle_operations(wbAPI, pgService, googleService);
 }
 
-main();
+async function cycle_operations(wbAPI, pgService, googleService) {
+    try {
+        console.debug('main: выполняем процедуру обновления данных WB...');
+        const tariffOperation = new TariffOperation().init(wbAPI, pgService, googleService);
+        //@ Преобразование текущей даты к виду: 'ГГГГ-ММ-ДД'
+        const todayTimeMyFormat = formatDate(new Date());
+        await tariffOperation.run(todayTimeMyFormat);
+    } catch (err) {
+        console.error(`main: НЕ УДАЛОСЬ обновить данные WB: ${err.message}`);
+    }
+
+    const one_hour = 3600000;
+    setTimeout(()=>{
+        cycle_operations(wbAPI, pgService, googleService)
+    }, one_hour);
+}
+
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0'); // Месяцы начинаются с 0
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+// main();
+export default main;

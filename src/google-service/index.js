@@ -100,10 +100,10 @@ class GoogleSheetsService {
         }
     }
 
-    async write_test_data() {
-        const values = [['aa', 'bb'], ['cc', 'dd']];
-        const range = 'stocks_coefs!A1:B2'
-        this.writeToSheet(this.testSheetId, range, values);
+    async write_wb_data(values, range) {
+        // const values = [['aa', 'bb'], ['cc', 'dd']];
+        // const range = 'stocks_coefs!A1:B2'
+        return await this.writeToSheet(this.testSheetId, range, values);
     }
 }
 
