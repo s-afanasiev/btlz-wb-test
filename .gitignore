@@ -2,3 +2,4 @@ node_modules
 .local
 .env
 dist
+/src/google-service/peerless-tiger-470113-s4-5bfd19996102.json

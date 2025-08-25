@@ -15,7 +15,8 @@
         "prettier": "prettier --config .prettierrc.json src/**/*.js --check",
         "prettier-format": "prettier --config .prettierrc.json src/**/*.js --write",
         "eslint": "eslint",
-        "eslint-fix": "eslint --fix"
+        "eslint-fix": "eslint --fix",
+        "main:dev": "tsx src/main.js"
     },
     "imports": {
         "#*": [

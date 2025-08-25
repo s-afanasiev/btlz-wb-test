@@ -6,11 +6,8 @@ export async function up(knex) {
     return knex.schema.createTable('tariff_requests', (table) => {
     table.bigIncrements('id').primary(); // BIGSERIAL PRIMARY KEY
     table.timestamp('request_dt').notNullable().defaultTo(knex.fn.now()); // TIMESTAMPTZ
-    table.date('dt_next_box').notNullable(); // DATE
-    table.date('dt_till_max').notNullable(); // DATE
-    table.jsonb('raw_response_json'); // JSONB (опционально)
-    
-    // Индекс для частых запросов по дате
+    table.date('dt_next_box'); // DATE
+    table.date('dt_till_max');
     table.index('request_dt');
   });
 }
